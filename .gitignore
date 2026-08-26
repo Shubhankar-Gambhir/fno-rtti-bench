@@ -1,0 +1,13 @@
+*.o
+*.so
+*.core
+core.*
+obj_*/
+scale.hpp
+scale_*.cpp
+bench_rtti
+bench_nortti
+loadbench
+app_n
+eh
+mm
