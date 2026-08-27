@@ -1,6 +1,6 @@
 # fno-rtti-bench
 
-Reproduction harness for **[The Null Slot: What `-fno-rtti` Actually Removes](https://shubhankar-gambhir.github.io/)**.
+Reproduction harness for **[The Null Slot: What `-fno-rtti` Actually Removes](https://shubhankar-gambhir.github.io/posts/the-null-slot-what-fno-rtti-actually-removes/)**.
 
 `-fno-rtti` is usually described as "it disables `dynamic_cast` and `typeid`". That is
 true and it hides most of what the flag does. This repo measures the rest: what happens
