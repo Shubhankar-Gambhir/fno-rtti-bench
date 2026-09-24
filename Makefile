@@ -53,7 +53,17 @@ mixing:
 	$(CXX) -O1 -fno-rtti -c lib.cpp -o lib_nortti.o
 	$(CXX) -O1 -frtti    -c app.cpp -o app_rtti.o
 	$(CXX) lib_nortti.o app_rtti.o -o app_n && echo "link: clean, no diagnostic"
-	-@./app_n; echo "(exit $$? -- 139 is SIGSEGV inside __dynamic_cast on a null typeinfo)"
+	-@./app_n; echo "(exit $$? -- 139 is SIGSEGV in type_info::name() on a null typeinfo)"
+	@echo
+	@echo "=== Direction B via dynamic_cast, class with an out-of-line virtual -> link error ==="
+	$(CXX) -O1 -frtti -c app_dc.cpp -o app_dc.o
+	-$(CXX) lib_nortti.o app_dc.o -o app_dc
+	@echo
+	@echo "=== Direction B via dynamic_cast, all-inline virtuals -> links clean, then dies ==="
+	$(CXX) -O1 -fno-rtti -c lib_inline.cpp -o lib_inline.o
+	$(CXX) -O1 -frtti    -c app_dc_inline.cpp -o app_dc_inline.o
+	$(CXX) lib_inline.o app_dc_inline.o -o app_dc_inline && echo "link: clean, no diagnostic"
+	-@./app_dc_inline; echo "(exit $$? -- 139 is SIGSEGV inside __dynamic_cast on a null typeinfo)"
 
 casts:
 	bash run.sh
@@ -68,6 +78,6 @@ jvm:
 	bash jvm_probe.sh $(JDK)
 
 clean:
-	rm -f *.o *.so eh app_n mm bench_rtti bench_nortti loadbench
+	rm -f *.o *.so eh app_n app_dc app_dc_inline mm bench_rtti bench_nortti loadbench
 	rm -rf obj_rtti obj_nortti obj_nortti_noexc obj_t
 	rm -f scale.hpp scale_*.cpp

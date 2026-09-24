@@ -46,6 +46,9 @@ accepts, and the fact that `throw`/`catch` keeps working *and* keeps emitting ty
 `-fno-rtti` base is a link error, which is the case the GCC manual documents. An `-frtti`
 caller doing `typeid` on an object whose vtable came from an `-fno-rtti` TU links with no
 diagnostic at all and then segfaults on the null slot. That one is not documented.
+`dynamic_cast` splits on the class: with an out-of-line virtual (a key function) in the
+`-fno-rtti` TU it fails to link, because the typeinfo it passes by address does not
+exist; with all-inline virtuals it links clean and segfaults inside `__dynamic_cast`.
 
 **`make casts`** builds a faithful reduction of HotSpot's `BarrierSet` hierarchy and its
 `FakeRttiSupport` bitmask, then times `barrier_set_cast`, an explicit `is_a()` check, and
@@ -71,7 +74,9 @@ flag is scoped to the JVM, and you can see that in the shipped bits without any 
 | `uses.cpp`, `upcast.cpp`, `statictypeid.cpp` | the constructs `-fno-rtti` does and does not reject |
 | `eh.cpp` | exceptions still work, and still emit typeinfo |
 | `bb.cpp`, `dd.cpp`, `linktest.sh` | mixing direction A: the link error |
-| `iface.hpp`, `lib.cpp`, `app.cpp` | mixing direction B: the silent runtime crash |
+| `iface.hpp`, `lib.cpp`, `app.cpp` | mixing direction B: `typeid` links clean, then crashes |
+| `app_dc.cpp` | direction B via `dynamic_cast`, key-function class: link error |
+| `inline.hpp`, `lib_inline.cpp`, `app_dc_inline.cpp` | direction B via `dynamic_cast`, all-inline class: links clean, then crashes |
 | `barrierset.{hpp,cpp}` | HotSpot's `BarrierSet` + `FakeRttiSupport`, reduced but faithful |
 | `bench.cpp` | the cast microbenchmark |
 | `asm.cpp`, `asm.sh` | the three downcast forms, for disassembly |
