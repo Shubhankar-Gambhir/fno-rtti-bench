@@ -1,6 +1,6 @@
 # fno-rtti-bench
 
-Reproduction harness for **[The Null Slot: What `-fno-rtti` Actually Removes](https://shubhankar-gambhir.github.io/posts/the-null-slot-what-fno-rtti-actually-removes/)**.
+Reproduction harness for **[The Null Slot: What `-fno-rtti` Removes, Costs, and Buys](https://shubhankar-gambhir.github.io/posts/the-null-slot-what-fno-rtti-actually-removes/)**.
 
 `-fno-rtti` is usually described as "it disables `dynamic_cast` and `typeid`". That is
 true and it hides most of what the flag does. This repo measures the rest: what happens
@@ -9,7 +9,9 @@ what OpenJDK uses instead of `dynamic_cast`.
 
 ## Running it
 
-Everything is plain GCC, GNU make, binutils, and Python 3. No dependencies.
+Everything is plain GCC, GNU make, binutils, and Python 3. No dependencies, except
+`make future`, which needs Clang 18 or later, and the `@libc++` entries of `make compilers`,
+which need libc++ and libc++abi.
 
 ```bash
 make abi      # what the flag does to the ABI, and what it rejects
@@ -18,6 +20,9 @@ make casts    # cast-cost microbenchmark on a BarrierSet-shaped hierarchy
 make asm      # the three downcast forms, disassembled
 make scale    # 1800-class corpus: size, relocations, load time, dirty pages
 make jvm      # probe a real libjvm.so
+make compilers    # the cast benchmark across compilers and C++ runtimes
+make constructs   # which RTTI-adjacent constructs each compiler accepts
+make future       # Clang's omit-vtable-rtti and relative vtables on the corpus
 make all
 ```
 
@@ -26,12 +31,26 @@ Override the toolchain or CPU pinning:
 ```bash
 make casts CXX=g++-13 PIN="taskset -c 7"
 make jvm   JDK=/path/to/any/jdk
+make compilers COMPILERS="g++-9 g++-13 clang++ clang++@libc++" PIN="taskset -c 7"
+make future CLANG=clang++-22
 ```
 
-`make casts` defaults to `-march=native`. The published numbers used
+`make casts` and `make compilers` default to `-march=native`. The published numbers used
 `-march=skylake-avx512` on a Xeon Gold 6130; retarget as needed. The alignment flags in
 `BENCHFLAGS` were measured to make no difference to this benchmark and are kept only for
 consistency with the rest of the blog series.
+
+### Which runtime ran your `dynamic_cast`?
+
+`dynamic_cast` is a call into `__dynamic_cast` in the C++ runtime library, so a
+dynamically linked benchmark measures whichever `libstdc++.so.6` the loader finds, not
+the one that shipped with the compiler that built it. On conda-forge, every GCC env from
+9 to 15 pulls in the same newest `libstdc++` package and links against it with an rpath;
+on a distro, the system `libstdc++.so.6` is often newer or older than the `g++` you ran.
+`make casts` links dynamically and is subject to this. `make compilers` links with
+`-static-libstdc++` by default so each row runs its own compiler's runtime; set
+`LDFLAGS=` to reproduce the dynamic behaviour. The difference is large: libstdc++'s GCC 13
+runtime added a fast path for the exact-type hit that cuts it by more than half.
 
 ## What each target shows
 
@@ -60,6 +79,24 @@ builds it three ways: `-frtti`, `-fno-rtti`, and `-fno-rtti -fno-exceptions`. Se
 the two flags is the point. `-fno-rtti` does nothing for `.gcc_except_table` or compile
 time; `-fno-exceptions` does nothing for `_ZTS`, `_ZTI`, or relocations.
 
+**`make compilers`** runs the cast benchmark once per compiler, linked against that
+compiler's own runtime, and prints the median of `RUNS` (default 5) runs of the
+single-type section. A `@libc++` suffix builds with `-stdlib=libc++`, so the casts run
+libc++abi's `__dynamic_cast` instead of libstdc++'s. A `@static` suffix links fully
+statically, for a toolchain newer than the host's glibc.
+
+**`make constructs`** compiles eleven one-line constructs (`typeid` on an object, a type,
+and a non-polymorphic type; `dynamic_cast` down, across, to `void*` and up; a `catch`;
+`std::any::type()`; `std::any_cast`; `std::function::target`) under `-fno-rtti`, then
+under `-frtti`, with every compiler in `COMPILERS`. `std::function::target` is the one that
+moves between versions: libstdc++ rejects it without RTTI before GCC 11.
+
+**`make future`** builds the 1800-class corpus with Clang five ways: `-frtti`,
+`-fno-rtti`, `-fno-rtti` plus `-fexperimental-omit-vtable-rtti` (which finally removes the
+null slot), and the same two with `-fexperimental-relative-c++-abi-vtables`. Both are ABI
+breaks. The relative-vtable builds are for static accounting only: linked against an
+ordinary `libstdc++`, even `catch (std::exception&)` crashes.
+
 **`make jvm`** counts `_ZTV` against `_ZTI` in a shipped `libjvm.so`, lists whatever
 typeinfo survived, and does the same for the JDK's other native libraries. On a stock
 OpenJDK 17 build, `libjvm.so` has thousands of vtables and about ten typeinfos, all of
@@ -84,10 +121,14 @@ flag is scoped to the JVM, and you can see that in the shipped bits without any 
 | `scale.sh` | the three-way build and the size/relocation table |
 | `loadbench.c` | `dlopen` timing and private-dirty page accounting |
 | `jvm_probe.sh` | vtable/typeinfo census of any JDK you point it at |
+| `compilers.sh` | the cast benchmark across compilers and runtimes |
+| `constructs.sh` | the construct-acceptance matrix |
+| `future.sh` | Clang's experimental vtable ABIs on the corpus |
 
 ## References
 
-- [GCC C++ Dialect Options](https://gcc.gnu.org/onlinedocs/gcc/C_002b_002b-Dialect-Options.html)
+- [GCC C++ Dialect Options](https://gcc.gnu.org/onlinedocs/gcc-15.2.0/gcc/C_002b_002b-Dialect-Options.html)
+- libstdc++ [873d395c2976](https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=873d395c2976), "small dynamic_cast optimization" (GCC 13)
 - [LLVM Coding Standards: Do not use RTTI or Exceptions](https://llvm.org/docs/CodingStandards.html#do-not-use-rtti-or-exceptions)
 - [How to set up LLVM-style RTTI for your class hierarchy](https://llvm.org/docs/HowToSetUpLLVMStyleRTTI.html)
 - OpenJDK [`make/autoconf/flags-cflags.m4`](https://github.com/openjdk/jdk17u/blob/master/make/autoconf/flags-cflags.m4) -- where `-fno-rtti` is scoped to `libjvm.so`

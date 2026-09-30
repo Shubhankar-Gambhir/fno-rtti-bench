@@ -13,3 +13,6 @@ app_dc
 app_dc_inline
 eh
 mm
+cc_bs_*
+cc_bench_*
+cc_out_*

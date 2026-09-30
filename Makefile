@@ -1,4 +1,4 @@
-# Reproduction harness for "The Null Slot: What -fno-rtti Actually Removes".
+# Reproduction harness for "The Null Slot: What -fno-rtti Removes, Costs, and Buys".
 #
 #   make abi      what the flag does to the ABI, and what it rejects
 #   make mixing   the two failure modes for mixing -frtti and -fno-rtti objects
@@ -6,21 +6,29 @@
 #   make asm      the three downcast forms, disassembled
 #   make scale    1800-class corpus: size, relocations, load time, dirty pages
 #   make jvm      probe a real libjvm.so (JDK=/path/to/jdk, else $JAVA_HOME)
+#   make compilers    the cast benchmark across compilers and C++ runtimes
+#   make constructs   which RTTI-adjacent constructs each compiler accepts
+#   make future       Clang's omit-vtable-rtti and relative vtables on the corpus
 #   make all      everything
 #
 # Override the toolchain or pinning:
 #   make casts CXX=g++-13 PIN="taskset -c 7"
+#   make compilers COMPILERS="g++-11 g++-13 clang++ clang++@libc++"
+#   make future CLANG=clang++-22
 
 CXX ?= g++
 CC  ?= gcc
 PIN ?=
 JDK ?= $(JAVA_HOME)
 
-export CXX CC PIN
+COMPILERS ?= $(CXX)
+CLANG ?= clang++
 
-.PHONY: all abi mixing casts asm scale jvm clean
+export CXX CC PIN COMPILERS
 
-all: abi mixing casts asm scale jvm
+.PHONY: all abi mixing casts asm scale jvm compilers constructs future clean
+
+all: abi mixing casts asm scale jvm compilers constructs future
 
 abi:
 	@echo "=== typeinfo symbols emitted, with and without RTTI ==="
@@ -77,7 +85,19 @@ scale:
 jvm:
 	bash jvm_probe.sh $(JDK)
 
+compilers:
+	bash compilers.sh
+
+constructs:
+	FLAGS=-fno-rtti bash constructs.sh
+	@echo
+	FLAGS=-frtti bash constructs.sh
+
+future:
+	CXX=$(CLANG) bash future.sh
+
 clean:
 	rm -f *.o *.so eh app_n app_dc app_dc_inline mm bench_rtti bench_nortti loadbench
-	rm -rf obj_rtti obj_nortti obj_nortti_noexc obj_t
+	rm -rf obj_rtti obj_nortti obj_nortti_noexc obj_t obj_f_*
+	rm -f cc_bs_* cc_bench_* cc_out_*
 	rm -f scale.hpp scale_*.cpp
