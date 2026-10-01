@@ -17,9 +17,9 @@ declare -A FLAGS=( [rtti]="-frtti"
                    [nortti_noexc]="-fno-rtti -fno-exceptions" )
 ORDER=(rtti nortti nortti_noexc)
 
-build() {                       # $1 = variant ; echoes best-of-2 wall seconds
+build() {                       # $1 = variant ; echoes best-of-5 wall seconds
   local v=$1 f=${FLAGS[$1]} best=999
-  for pass in 1 2; do
+  for pass in 1 2 3 4 5; do
     rm -rf obj_$v; mkdir -p obj_$v
     local t0=$(date +%s.%N)
     ls scale_*.cpp scale_factory.cpp | \
@@ -58,7 +58,19 @@ row "_ZTV vtable symbols"    $(sym libscale_rtti.so _ZTV)        $(sym libscale_
 row "_ZTI typeinfo symbols"  $(sym libscale_rtti.so _ZTI)        $(sym libscale_nortti.so _ZTI)        $(sym libscale_nortti_noexc.so _ZTI)
 row "_ZTS typename symbols"  $(sym libscale_rtti.so _ZTS)        $(sym libscale_nortti.so _ZTS)        $(sym libscale_nortti_noexc.so _ZTS)
 hr
-printf "%-30s %13.2f %13.2f %15.2f   (best of 2, -j%s)\n" "compile wall time (s)" ${T[rtti]} ${T[nortti]} ${T[nortti_noexc]} "$J"
+printf "%-30s %13.2f %13.2f %15.2f   (best of 5, -j%s)\n" "compile wall time (s)" ${T[rtti]} ${T[nortti]} ${T[nortti_noexc]} "$J"
+# Wall time at -j$J is set by the slowest file, which is the factory. CPU time per group of
+# files shows what each flag does to the class definitions and to the factory separately.
+cpu() {                         # $1 = variant, $2.. = files ; echoes median-of-5 user CPU seconds
+  local v=$1; shift
+  for pass in 1 2 3 4 5; do
+    /usr/bin/time -f %U sh -c "for f in $*; do $CXX -O2 -DNDEBUG -fPIC -fvisibility=hidden ${FLAGS[$v]} -c \$f -o /dev/null; done" 2>&1
+  done | sort -g | sed -n 3p
+}
+printf "%-30s %13s %13s %15s   (user CPU, median of 5)\n" "compile CPU, class files (s)" \
+  $(for v in "${ORDER[@]}"; do cpu $v scale_[0-9]*.cpp; done)
+printf "%-30s %13s %13s %15s   (user CPU, median of 5)\n" "compile CPU, factory (s)" \
+  $(for v in "${ORDER[@]}"; do cpu $v scale_factory.cpp; done)
 echo
 hr; echo "load cost"; hr
 $CC -O2 -o loadbench loadbench.c -ldl || exit 1
